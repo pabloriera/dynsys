@@ -14,20 +14,20 @@
     <h1>Dynamical Systems Simulator</h1>
     
     <div class="top-section">
+        <div class="model-selection">
+            <label for="model-select">Select Model:</label>
+            <select id="model-select">
+                <option value="wilson-cowan">Wilson-Cowan</option>
+                <option value="damped-harmonic">Damped Harmonic Oscillator</option>
+                <option value="coupled-wilson-cowan">Coupled Wilson-Cowan Oscillators</option>
+            </select>
+        </div>
         <div id="formula-container"></div>
     </div>
     
     <div class="main-layout">
         <!-- Left column for parameters and controls -->
         <div class="left-panel">
-            <div class="model-selection">
-                <label for="model-select">Select Model:</label>
-                <select id="model-select">
-                    <option value="wilson-cowan">Wilson-Cowan</option>
-                    <option value="damped-harmonic">Damped Harmonic Oscillator</option>
-                    <option value="coupled-wilson-cowan">Coupled Wilson-Cowan Oscillators</option>
-                </select>
-            </div>
             <div class="sliders-container">
                 <h2>Model Parameters</h2>
                 <div id="sliders"></div>

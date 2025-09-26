@@ -33,11 +33,11 @@
                     const E2 = y[2];
                     const I2 = y[3];
 
-                    const dE1_dt = (-E1 + (1 - E1) * sigmoid(params.w_ee1 * E1 - params.w_ei1 * I1 + params.w_c21 * E2 - params.theta_e1 + params.P1)) / params.tau_e1;
-                    const dI1_dt = (-I1 + (1 - I1) * sigmoid(params.w_ie1 * E1 - params.w_ii1 * I1 - params.theta_i1 + params.Q1)) / params.tau_i1;
-                    
-                    const dE2_dt = (-E2 + (1 - E2) * sigmoid(params.w_ee2 * E2 - params.w_ei2 * I2 + params.w_c12 * E1 - params.theta_e2 + params.P2)) / params.tau_e2;
-                    const dI2_dt = (-I2 + (1 - I2) * sigmoid(params.w_ie2 * E2 - params.w_ii2 * I2 - params.theta_i2 + params.Q2)) / params.tau_i2;
+                    const dE1_dt = (-E1 + (1 - E1) * sigmoid(params.w_ee1 * E1 - params.w_ei1 * I1 + params.w_ce21 * E2 - params.theta_e1 + params.P1)) / params.tau_e1;
+                    const dI1_dt = (-I1 + (1 - I1) * sigmoid(params.w_ie1 * E1 - params.w_ii1 * I1 + params.w_ci21 * E2- params.theta_i1 + params.Q1)) / params.tau_i1;
+
+                    const dE2_dt = (-E2 + (1 - E2) * sigmoid(params.w_ee2 * E2 - params.w_ei2 * I2 + params.w_ce12 * E1 - params.theta_e2 + params.P2)) / params.tau_e2;
+                    const dI2_dt = (-I2 + (1 - I2) * sigmoid(params.w_ie2 * E2 - params.w_ii2 * I2 + params.w_ci12 * E1 - params.theta_i2 + params.Q2)) / params.tau_i2;
 
                     return [dE1_dt, dI1_dt, dE2_dt, dI2_dt];
                 };

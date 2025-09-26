@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const modelSelect = document.getElementById('model-select');
     const slidersContainer = document.getElementById('sliders');
     const plotDiv = document.getElementById('plot');
-    const plotDiv2 = document.getElementById('plot2');
+    const plotDivSecondary = document.getElementById('plot2');
     const formulaContainer = document.getElementById('formula-container');
     const tmaxSlider = document.getElementById('tmax-slider');
     const tmax_value = document.getElementById('tmax-value');
@@ -10,6 +10,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const xlimValue = document.getElementById('xlim-value');
     const ylimValue = document.getElementById('ylim-value');
     const clearTrajectoriesBtn = document.getElementById('clear-trajectories');
+    const phasePlotContainer = document.getElementById('phase-plot-container');
+    const phasePlot2Container = document.getElementById('phase-plot2-container');
+    const plot2Controls = document.getElementById('plot2-controls');
     
     // Axis range control elements
     const xlimMinInput = document.getElementById('xlim-min-input');
@@ -25,16 +28,16 @@ document.addEventListener('DOMContentLoaded', function() {
     const ylimMinIncrease = document.getElementById('ylim-min-increase');
     const ylimMaxDecrease = document.getElementById('ylim-max-decrease');
     const ylimMaxIncrease = document.getElementById('ylim-max-increase');
-    // Plot 2 Axis range control elements
-    const plot2Controls = document.getElementById('plot2-controls');
+
     const xlim2Value = document.getElementById('xlim2-value');
-    const ylim2Value = document.getElementById('ylim2-value');
     const xlim2MinInput = document.getElementById('xlim2-min-input');
     const xlim2MaxInput = document.getElementById('xlim2-max-input');
     const xlim2MinDecrease = document.getElementById('xlim2-min-decrease');
     const xlim2MinIncrease = document.getElementById('xlim2-min-increase');
     const xlim2MaxDecrease = document.getElementById('xlim2-max-decrease');
     const xlim2MaxIncrease = document.getElementById('xlim2-max-increase');
+
+    const ylim2Value = document.getElementById('ylim2-value');
     const ylim2MinInput = document.getElementById('ylim2-min-input');
     const ylim2MaxInput = document.getElementById('ylim2-max-input');
     const ylim2MinDecrease = document.getElementById('ylim2-min-decrease');
@@ -42,6 +45,49 @@ document.addEventListener('DOMContentLoaded', function() {
     const ylim2MaxDecrease = document.getElementById('ylim2-max-decrease');
     const ylim2MaxIncrease = document.getElementById('ylim2-max-increase');
     
+    const phaseAxisControls = [
+        {
+            x: {
+                label: xlimValue,
+                minInput: xlimMinInput,
+                maxInput: xlimMaxInput,
+                decreaseMin: xlimMinDecrease,
+                increaseMin: xlimMinIncrease,
+                decreaseMax: xlimMaxDecrease,
+                increaseMax: xlimMaxIncrease
+            },
+            y: {
+                label: ylimValue,
+                minInput: ylimMinInput,
+                maxInput: ylimMaxInput,
+                decreaseMin: ylimMinDecrease,
+                increaseMin: ylimMinIncrease,
+                decreaseMax: ylimMaxDecrease,
+                increaseMax: ylimMaxIncrease
+            }
+        },
+        {
+            x: {
+                label: xlim2Value,
+                minInput: xlim2MinInput,
+                maxInput: xlim2MaxInput,
+                decreaseMin: xlim2MinDecrease,
+                increaseMin: xlim2MinIncrease,
+                decreaseMax: xlim2MaxDecrease,
+                increaseMax: xlim2MaxIncrease
+            },
+            y: {
+                label: ylim2Value,
+                minInput: ylim2MinInput,
+                maxInput: ylim2MaxInput,
+                decreaseMin: ylim2MinDecrease,
+                increaseMin: ylim2MinIncrease,
+                decreaseMax: ylim2MaxDecrease,
+                increaseMax: ylim2MaxIncrease
+            }
+        }
+    ];
+
     // Continuous simulation elements
     const startSimBtn = document.getElementById('start-simulation');
     const stopSimBtn = document.getElementById('stop-simulation');
@@ -51,7 +97,9 @@ document.addEventListener('DOMContentLoaded', function() {
     const timeWindowSlider = document.getElementById('time-window-slider');
     const timeWindowValue = document.getElementById('time-window-value');
     const timePlotDiv = document.getElementById('time-plot');
-    const timePlotDiv2 = document.getElementById('time-plot2');
+    const timePlotDivSecondary = document.getElementById('time-plot2');
+    const timePlotContainer = document.getElementById('time-plot-container');
+    const timePlot2Container = document.getElementById('time-plot2-container');
 
     let trajectories = []; // Store clicked trajectories
     let clickTimeout = null; // Debounce clicks
@@ -65,6 +113,8 @@ document.addEventListener('DOMContentLoaded', function() {
 
     let models = {}; // Will be loaded from JSON
     let currentParams = {};
+    let phaseGroups = [];
+    let phaseAxisRanges = [];
 
     // Load models from JSON file
     async function loadModels() {
@@ -72,6 +122,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const response = await fetch('models.json');
             const modelsData = await response.json();
             models = modelsData;
+            normalizeModelConfigs(models);
             console.log('Models loaded:', models);
             
             // Initialize after models are loaded
@@ -106,46 +157,149 @@ document.addEventListener('DOMContentLoaded', function() {
                 ode_type: 'wilson_cowan'
             }
         };
+        normalizeModelConfigs(models);
     }
 
-    // Initialize axis ranges from model configuration (first plot)
-    function initializeAxisRanges(model) {
-        const firstPlot = model.plots && model.plots[0];
-        if (firstPlot && firstPlot.axis_ranges) {
-            const xRange = firstPlot.axis_ranges.x;
-            const yRange = firstPlot.axis_ranges.y;
-            
-            xlimMinInput.value = xRange.min;
-            xlimMaxInput.value = xRange.max;
-            xlimValue.textContent = `[${xRange.min}, ${xRange.max}]`;
-            
-            ylimMinInput.value = yRange.min;
-            ylimMaxInput.value = yRange.max;
-            ylimValue.textContent = `[${yRange.min}, ${yRange.max}]`;
-        } else {
-            // Fallback to default ranges
-            xlimMinInput.value = 0;
-            xlimMaxInput.value = 1;
-            xlimValue.textContent = `[0, 1]`;
-            
-            ylimMinInput.value = 0;
-            ylimMaxInput.value = 1;
-            ylimValue.textContent = `[0, 1]`;
+    function normalizeModelConfigs(modelsObj) {
+        const normalizeAxis = (range) => {
+            const min = range && range.min !== undefined ? range.min : 0;
+            const maxValue = range && range.max !== undefined ? range.max : 1;
+            const initialMax = range && range.initial_max !== undefined ? range.initial_max : maxValue;
+            return { min, max: maxValue, initial_max: initialMax };
+        };
+
+        for (const key in modelsObj) {
+            const model = modelsObj[key];
+            if (!model || typeof model !== 'object') {
+                continue;
+            }
+
+            const rawGroups = Array.isArray(model.phase_groups) && model.phase_groups.length > 0
+                ? model.phase_groups
+                : (Array.isArray(model.plots) && model.plots.length > 0
+                    ? model.plots
+                    : [{
+                        indices: Array.isArray(model.plot_indices) ? model.plot_indices : [0, 1],
+                        axes: Array.isArray(model.plot_axes) ? model.plot_axes : undefined,
+                        axis_ranges: model.axis_ranges
+                    }]);
+
+            const normalizedGroups = rawGroups.map((group, index) => {
+                const indices = Array.isArray(group.indices) && group.indices.length >= 2
+                    ? group.indices.slice(0, 2)
+                    : [0, 1];
+
+                const axes = Array.isArray(group.axes) && group.axes.length >= 2
+                    ? group.axes.slice(0, 2)
+                    : [`Variable ${indices[0] + 1}`, `Variable ${indices[1] + 1}`];
+
+                const axisRangesSource = group.axis_ranges && typeof group.axis_ranges === 'object'
+                    ? group.axis_ranges
+                    : {};
+
+                return {
+                    name: group.name || `Grupo ${index + 1}`,
+                    indices,
+                    axes,
+                    axis_ranges: {
+                        x: normalizeAxis(axisRangesSource.x || {}),
+                        y: normalizeAxis(axisRangesSource.y || {})
+                    }
+                };
+            });
+
+            model.phase_groups = normalizedGroups;
+
+            const primaryGroup = normalizedGroups[0];
+            model.plot_indices = primaryGroup.indices;
+            model.plot_axes = primaryGroup.axes;
+            model.axis_ranges = primaryGroup.axis_ranges;
+
+            if (model.requires_all_phase_groups === undefined) {
+                model.requires_all_phase_groups = normalizedGroups.length > 1;
+            }
         }
-        // Initialize second plot ranges (if available)
-        const secondPlot = model.plots && model.plots[1];
-        if (secondPlot && secondPlot.axis_ranges) {
-            const x2 = secondPlot.axis_ranges.x;
-            const y2 = secondPlot.axis_ranges.y;
-            xlim2MinInput.value = x2.min;
-            xlim2MaxInput.value = x2.max;
-            xlim2Value.textContent = `[${x2.min}, ${x2.max}]`;
-            ylim2MinInput.value = y2.min;
-            ylim2MaxInput.value = y2.max;
-            ylim2Value.textContent = `[${y2.min}, ${y2.max}]`;
-            if (plot2Controls) plot2Controls.style.display = '';
-        } else {
-            if (plot2Controls) plot2Controls.style.display = 'none';
+    }
+
+    function applyAxisRangesToInputs(groupIndex) {
+        const range = phaseAxisRanges[groupIndex];
+        const controls = phaseAxisControls[groupIndex];
+        if (!range || !controls) {
+            return;
+        }
+
+        controls.x.minInput.value = range.x.min;
+        controls.x.maxInput.value = range.x.max;
+        controls.x.label.textContent = `[${range.x.min}, ${range.x.max}]`;
+
+        controls.y.minInput.value = range.y.min;
+        controls.y.maxInput.value = range.y.max;
+        controls.y.label.textContent = `[${range.y.min}, ${range.y.max}]`;
+    }
+
+    // Initialize axis ranges from model configuration
+    function initializeAxisRanges(model) {
+        const groups = Array.isArray(model.phase_groups) && model.phase_groups.length > 0
+            ? model.phase_groups
+            : [{
+                name: `${model.plot_axes[0]} vs ${model.plot_axes[1]}`,
+                indices: model.plot_indices,
+                axes: model.plot_axes,
+                axis_ranges: model.axis_ranges
+            }];
+
+        phaseGroups = groups;
+        phaseAxisRanges = groups.map(group => {
+            const xConfig = group.axis_ranges?.x || {};
+            const yConfig = group.axis_ranges?.y || {};
+
+            return {
+                x: {
+                    min: xConfig.min !== undefined ? xConfig.min : 0,
+                    max: xConfig.initial_max !== undefined
+                        ? xConfig.initial_max
+                        : (xConfig.max !== undefined ? xConfig.max : 1)
+                },
+                y: {
+                    min: yConfig.min !== undefined ? yConfig.min : 0,
+                    max: yConfig.initial_max !== undefined
+                        ? yConfig.initial_max
+                        : (yConfig.max !== undefined ? yConfig.max : 1)
+                }
+            };
+        });
+
+        applyAxisRangesToInputs(0);
+
+        const hasSecondaryGroup = phaseGroups.length > 1;
+        if (hasSecondaryGroup) {
+            applyAxisRangesToInputs(1);
+        }
+
+        if (plot2Controls) {
+            plot2Controls.style.display = hasSecondaryGroup ? 'block' : 'none';
+        }
+
+        if (phasePlot2Container) {
+            if (hasSecondaryGroup) {
+                phasePlot2Container.style.display = 'block';
+            } else {
+                phasePlot2Container.style.display = 'none';
+                if (plotDivSecondary) {
+                    Plotly.purge(plotDivSecondary);
+                }
+            }
+        }
+
+        if (timePlot2Container) {
+            if (hasSecondaryGroup) {
+                timePlot2Container.style.display = 'block';
+            } else {
+                timePlot2Container.style.display = 'none';
+                if (timePlotDivSecondary) {
+                    Plotly.purge(timePlotDivSecondary);
+                }
+            }
         }
     }
 
@@ -204,15 +358,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearTimeout(window.phaseResizeTimeout);
                     window.phaseResizeTimeout = setTimeout(() => {
                         Plotly.Plots.resize(plotDiv);
-                    }, 100);
-                }
-            });
-            const phase2ResizeObserver = new ResizeObserver(entries => {
-                for (let entry of entries) {
-                    clearTimeout(window.phase2ResizeTimeout);
-                    window.phase2ResizeTimeout = setTimeout(() => {
-                        if (phaseContainer2 && phaseContainer2.style.display !== 'none') {
-                            Plotly.Plots.resize(plotDiv2);
+                        if (plotDivSecondary && phasePlot2Container && phasePlot2Container.style.display !== 'none') {
+                            Plotly.Plots.resize(plotDivSecondary);
                         }
                     }, 100);
                 }
@@ -223,24 +370,21 @@ document.addEventListener('DOMContentLoaded', function() {
                     clearTimeout(window.timeResizeTimeout);
                     window.timeResizeTimeout = setTimeout(() => {
                         Plotly.Plots.resize(timePlotDiv);
-                    }, 100);
-                }
-            });
-            const time2ResizeObserver = new ResizeObserver(entries => {
-                for (let entry of entries) {
-                    clearTimeout(window.time2ResizeTimeout);
-                    window.time2ResizeTimeout = setTimeout(() => {
-                        if (timeContainer2 && timeContainer2.style.display !== 'none') {
-                            Plotly.Plots.resize(timePlotDiv2);
+                        if (timePlotDivSecondary && timePlot2Container && timePlot2Container.style.display !== 'none') {
+                            Plotly.Plots.resize(timePlotDivSecondary);
                         }
                     }, 100);
                 }
             });
             
             phaseResizeObserver.observe(phaseContainer);
-            if (phaseContainer2) phase2ResizeObserver.observe(phaseContainer2);
             timeResizeObserver.observe(timeContainer);
-            if (timeContainer2) time2ResizeObserver.observe(timeContainer2);
+            if (phaseContainer2) {
+                phaseResizeObserver.observe(phaseContainer2);
+            }
+            if (timeContainer2) {
+                timeResizeObserver.observe(timeContainer2);
+            }
         }
         
         // Add manual resize handles functionality
@@ -269,17 +413,6 @@ document.addEventListener('DOMContentLoaded', function() {
                 const newHeight = Math.max(200, startHeight + deltaY);
                 container.style.height = newHeight + 'px';
                 container.style.flex = 'none';
-
-                // Live resize the corresponding plot while dragging
-                if (container.id === 'phase-plot-container') {
-                    Plotly.Plots.resize(plotDiv);
-                } else if (container.id === 'phase-plot2-container') {
-                    Plotly.Plots.resize(plotDiv2);
-                } else if (container.id === 'time-plot-container') {
-                    Plotly.Plots.resize(timePlotDiv);
-                } else if (container.id === 'time-plot2-container') {
-                    Plotly.Plots.resize(timePlotDiv2);
-                }
             }
             
             function stopResize() {
@@ -293,32 +426,23 @@ document.addEventListener('DOMContentLoaded', function() {
                 setTimeout(() => {
                     if (container.id === 'phase-plot-container') {
                         Plotly.Plots.resize(plotDiv);
-                    } else if (container.id === 'phase-plot2-container') {
-                        Plotly.Plots.resize(plotDiv2);
+                    } else if (container.id === 'phase-plot2-container' && plotDivSecondary) {
+                        Plotly.Plots.resize(plotDivSecondary);
                     } else if (container.id === 'time-plot-container') {
                         Plotly.Plots.resize(timePlotDiv);
-                    } else if (container.id === 'time-plot2-container') {
-                        Plotly.Plots.resize(timePlotDiv2);
+                    } else if (container.id === 'time-plot2-container' && timePlotDivSecondary) {
+                        Plotly.Plots.resize(timePlotDivSecondary);
                     }
                 }, 100);
             }
         });
-
-        // Also handle window resize to keep plots responsive
-        window.addEventListener('resize', () => {
-            Plotly.Plots.resize(plotDiv);
-            if (plotDiv2 && document.getElementById('phase-plot2-container').style.display !== 'none') {
-                Plotly.Plots.resize(plotDiv2);
-            }
-            Plotly.Plots.resize(timePlotDiv);
-            const time2Container = document.getElementById('time-plot2-container');
-            if (timePlotDiv2 && time2Container && time2Container.style.display !== 'none') {
-                Plotly.Plots.resize(timePlotDiv2);
-            }
-        });
     }
 
-    // getOdeFunction is provided by odeFactory.js (global)
+    // Helper functions
+    function sigmoid(x) {
+        return 1 / (1 + Math.exp(-x));
+    }
+
 
     function updateFormula(model) {
         formulaContainer.innerHTML = `$$ ${model.formula} $$`;
@@ -523,123 +647,88 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    // X-axis range controls
-    function updateXAxisRange() {
-        const newMin = parseFloat(xlimMinInput.value);
-        const newMax = parseFloat(xlimMaxInput.value);
-        
+    function updateAxisRangeFromInputs(groupIndex, axisKey) {
+        const range = phaseAxisRanges[groupIndex];
+        const controls = phaseAxisControls[groupIndex];
+        if (!range || !controls) {
+            return;
+        }
+
+        const axisControls = controls[axisKey];
+        const newMin = parseFloat(axisControls.minInput.value);
+        const newMax = parseFloat(axisControls.maxInput.value);
+
+        if (!Number.isFinite(newMin) || !Number.isFinite(newMax)) {
+            return;
+        }
+
         if (newMin < newMax) {
-            xlimValue.textContent = `[${newMin}, ${newMax}]`;
-            
+            range[axisKey].min = newMin;
+            range[axisKey].max = newMax;
+            axisControls.label.textContent = `[${newMin}, ${newMax}]`;
+
             if (!isSimulating) {
-                updatePlot();
+                updatePhasePlots();
+            }
+        } else {
+            axisControls.minInput.value = range[axisKey].min;
+            axisControls.maxInput.value = range[axisKey].max;
+        }
+    }
+
+    function adjustAxisBound(groupIndex, axisKey, boundKey, delta) {
+        const range = phaseAxisRanges[groupIndex];
+        const controls = phaseAxisControls[groupIndex];
+        if (!range || !controls) {
+            return;
+        }
+
+        const axisControls = controls[axisKey];
+        const minValue = parseFloat(axisControls.minInput.value);
+        const maxValue = parseFloat(axisControls.maxInput.value);
+
+        if (boundKey === 'min') {
+            const candidate = +(minValue + delta).toFixed(3);
+            if (candidate < maxValue) {
+                axisControls.minInput.value = candidate;
+                updateAxisRangeFromInputs(groupIndex, axisKey);
+            }
+        } else {
+            const candidate = +(maxValue + delta).toFixed(3);
+            if (candidate > minValue) {
+                axisControls.maxInput.value = candidate;
+                updateAxisRangeFromInputs(groupIndex, axisKey);
             }
         }
     }
 
-    xlimMinDecrease.addEventListener('click', () => {
-        xlimMinInput.value = (parseFloat(xlimMinInput.value) - 0.1).toFixed(1);
-        updateXAxisRange();
-    });
-
-    xlimMinIncrease.addEventListener('click', () => {
-        const newMin = parseFloat(xlimMinInput.value) + 0.1;
-        if (newMin < parseFloat(xlimMaxInput.value)) {
-            xlimMinInput.value = newMin.toFixed(1);
-            updateXAxisRange();
-        }
-    });
-
-    xlimMaxDecrease.addEventListener('click', () => {
-        const newMax = parseFloat(xlimMaxInput.value) - 0.1;
-        if (newMax > parseFloat(xlimMinInput.value)) {
-            xlimMaxInput.value = newMax.toFixed(1);
-            updateXAxisRange();
-        }
-    });
-
-    xlimMaxIncrease.addEventListener('click', () => {
-        xlimMaxInput.value = (parseFloat(xlimMaxInput.value) + 0.1).toFixed(1);
-        updateXAxisRange();
-    });
-
-    xlimMinInput.addEventListener('change', updateXAxisRange);
-    xlimMaxInput.addEventListener('change', updateXAxisRange);
-
-    // Y-axis range controls
-    function updateYAxisRange() {
-        const newMin = parseFloat(ylimMinInput.value);
-        const newMax = parseFloat(ylimMaxInput.value);
-        
-        if (newMin < newMax) {
-            ylimValue.textContent = `[${newMin}, ${newMax}]`;
-            
-            if (!isSimulating) {
-                updatePlot();
+    function setupAxisControlEvents() {
+        phaseAxisControls.forEach((controls, index) => {
+            if (!controls || !controls.x.minInput) {
+                return;
             }
-        }
+
+            const xStep = parseFloat(controls.x.minInput.step || '0.1');
+            const yStep = parseFloat(controls.y.minInput.step || '0.1');
+
+            controls.x.decreaseMin.addEventListener('click', () => adjustAxisBound(index, 'x', 'min', -xStep));
+            controls.x.increaseMin.addEventListener('click', () => adjustAxisBound(index, 'x', 'min', xStep));
+            controls.x.decreaseMax.addEventListener('click', () => adjustAxisBound(index, 'x', 'max', -xStep));
+            controls.x.increaseMax.addEventListener('click', () => adjustAxisBound(index, 'x', 'max', xStep));
+
+            controls.y.decreaseMin.addEventListener('click', () => adjustAxisBound(index, 'y', 'min', -yStep));
+            controls.y.increaseMin.addEventListener('click', () => adjustAxisBound(index, 'y', 'min', yStep));
+            controls.y.decreaseMax.addEventListener('click', () => adjustAxisBound(index, 'y', 'max', -yStep));
+            controls.y.increaseMax.addEventListener('click', () => adjustAxisBound(index, 'y', 'max', yStep));
+
+            controls.x.minInput.addEventListener('change', () => updateAxisRangeFromInputs(index, 'x'));
+            controls.x.maxInput.addEventListener('change', () => updateAxisRangeFromInputs(index, 'x'));
+            controls.y.minInput.addEventListener('change', () => updateAxisRangeFromInputs(index, 'y'));
+            controls.y.maxInput.addEventListener('change', () => updateAxisRangeFromInputs(index, 'y'));
+        });
     }
 
-    // Plot 2 range controls
-    function updateXAxis2Range() {
-        const newMin = parseFloat(xlim2MinInput.value);
-        const newMax = parseFloat(xlim2MaxInput.value);
-        if (newMin < newMax) {
-            xlim2Value.textContent = `[${newMin}, ${newMax}]`;
-            if (!isSimulating) updatePlot();
-        }
-    }
-    function updateYAxis2Range() {
-        const newMin = parseFloat(ylim2MinInput.value);
-        const newMax = parseFloat(ylim2MaxInput.value);
-        if (newMin < newMax) {
-            ylim2Value.textContent = `[${newMin}, ${newMax}]`;
-            if (!isSimulating) updatePlot();
-        }
-    }
-    if (plot2Controls) {
-        xlim2MinDecrease.addEventListener('click', () => { xlim2MinInput.value = (parseFloat(xlim2MinInput.value) - 0.1).toFixed(1); updateXAxis2Range(); });
-        xlim2MinIncrease.addEventListener('click', () => { const v = parseFloat(xlim2MinInput.value) + 0.1; if (v < parseFloat(xlim2MaxInput.value)) { xlim2MinInput.value = v.toFixed(1); updateXAxis2Range(); } });
-        xlim2MaxDecrease.addEventListener('click', () => { const v = parseFloat(xlim2MaxInput.value) - 0.1; if (v > parseFloat(xlim2MinInput.value)) { xlim2MaxInput.value = v.toFixed(1); updateXAxis2Range(); } });
-        xlim2MaxIncrease.addEventListener('click', () => { xlim2MaxInput.value = (parseFloat(xlim2MaxInput.value) + 0.1).toFixed(1); updateXAxis2Range(); });
-        xlim2MinInput.addEventListener('change', updateXAxis2Range);
-        xlim2MaxInput.addEventListener('change', updateXAxis2Range);
-        ylim2MinDecrease.addEventListener('click', () => { ylim2MinInput.value = (parseFloat(ylim2MinInput.value) - 0.1).toFixed(1); updateYAxis2Range(); });
-        ylim2MinIncrease.addEventListener('click', () => { const v = parseFloat(ylim2MinInput.value) + 0.1; if (v < parseFloat(ylim2MaxInput.value)) { ylim2MinInput.value = v.toFixed(1); updateYAxis2Range(); } });
-        ylim2MaxDecrease.addEventListener('click', () => { const v = parseFloat(ylim2MaxInput.value) - 0.1; if (v > parseFloat(ylim2MinInput.value)) { ylim2MaxInput.value = v.toFixed(1); updateYAxis2Range(); } });
-        ylim2MaxIncrease.addEventListener('click', () => { ylim2MaxInput.value = (parseFloat(ylim2MaxInput.value) + 0.1).toFixed(1); updateYAxis2Range(); });
-        ylim2MinInput.addEventListener('change', updateYAxis2Range);
-        ylim2MaxInput.addEventListener('change', updateYAxis2Range);
-    }
-
-    ylimMinDecrease.addEventListener('click', () => {
-        ylimMinInput.value = (parseFloat(ylimMinInput.value) - 0.1).toFixed(1);
-        updateYAxisRange();
-    });
-
-    ylimMinIncrease.addEventListener('click', () => {
-        const newMin = parseFloat(ylimMinInput.value) + 0.1;
-        if (newMin < parseFloat(ylimMaxInput.value)) {
-            ylimMinInput.value = newMin.toFixed(1);
-            updateYAxisRange();
-        }
-    });
-
-    ylimMaxDecrease.addEventListener('click', () => {
-        const newMax = parseFloat(ylimMaxInput.value) - 0.1;
-        if (newMax > parseFloat(ylimMinInput.value)) {
-            ylimMaxInput.value = newMax.toFixed(1);
-            updateYAxisRange();
-        }
-    });
-
-    ylimMaxIncrease.addEventListener('click', () => {
-        ylimMaxInput.value = (parseFloat(ylimMaxInput.value) + 0.1).toFixed(1);
-        updateYAxisRange();
-    });
-
-    ylimMinInput.addEventListener('change', updateYAxisRange);
-    ylimMaxInput.addEventListener('change', updateYAxisRange);
+    setupAxisControlEvents();
 
     solverSelect.addEventListener('change', function() {
         if (!isSimulating) {
@@ -656,87 +745,75 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateTimePlot() {
         const timeWindow = parseFloat(timeWindowSlider.value);
         const selectedModel = models[modelSelect.value];
-        
-        // Filter data to show only the current time window
+        const groups = phaseGroups.length > 0 ? phaseGroups : (selectedModel.phase_groups || [{
+            name: `${selectedModel.plot_axes[0]} vs ${selectedModel.plot_axes[1]}`,
+            indices: selectedModel.plot_indices,
+            axes: selectedModel.plot_axes
+        }]);
+
         const filteredData = timeData.filter(point => point.t >= currentTime - timeWindow);
-        
-    const axes0 = (selectedModel.plots && selectedModel.plots[0] && selectedModel.plots[0].axes) || selectedModel.plot_axes || ['Var1','Var2'];
-        const traces = [
-            {
-                x: filteredData.map(p => p.t),
-                y: filteredData.map(p => p.E),
-                mode: 'lines',
-        name: axes0[0],
-                line: { color: 'red', width: 2 }
-            },
-            {
-                x: filteredData.map(p => p.t),
-                y: filteredData.map(p => p.I),
-                mode: 'lines',
-        name: axes0[1],
-                line: { color: 'blue', width: 2 },
-                yaxis: 'y2'
-            }
+        const colorPalette = [
+            ['#d1495b', '#0077b6'],
+            ['#2a9d8f', '#f4a261']
+        ];
+        const plotTargets = [
+            { div: timePlotDiv, container: timePlotContainer },
+            { div: timePlotDivSecondary, container: timePlot2Container }
         ];
 
-        const layout = {
-            title: 'Time Series (Oscilloscope View)',
-            xaxis: { 
-                title: 'Time (s)',
-                range: [Math.max(0, currentTime - timeWindow), currentTime + 1]
-            },
-            yaxis: { 
-        title: axes0[0],
-                side: 'left',
-                color: 'red'
-            },
-            yaxis2: {
-        title: axes0[1],
-                side: 'right',
-                overlaying: 'y',
-                color: 'blue'
-            },
-            margin: { l: 50, r: 50, b: 50, t: 50 },
-            showlegend: true
-        };
+        groups.forEach((group, index) => {
+            if (index >= plotTargets.length) {
+                console.warn('More than two time-series groups are not supported yet.');
+                return;
+            }
 
-        Plotly.react(timePlotDiv, traces, layout);
+            const target = plotTargets[index];
+            if (!target.div || !target.container) {
+                return;
+            }
 
-        // Second time plot for coupled model (plots[1])
-        const container2 = document.getElementById('time-plot2-container');
-        const p2 = selectedModel.plots && selectedModel.plots[1];
-        if (p2 && timePlotDiv2) {
-            container2.style.display = '';
-            const axes1 = p2.axes || ['Var3','Var4'];
-            // For now, mirror the time series using E2/I2 from currentState indices 2/3 stored as E/I not tracked separately; reuse E/I fields for simplicity
-            const traces2 = [
-                {
-                    x: filteredData.map(p => p.t),
-                    y: filteredData.map(p => p.E2 ?? p.E),
+            const colors = colorPalette[index] || ['#d1495b', '#0077b6'];
+
+            const traces = group.axes.slice(0, 2).map((axisLabel, axisIdx) => {
+                const color = colors[axisIdx % colors.length];
+                return {
+                    x: filteredData.map(point => point.t),
+                    y: filteredData.map(point => point.state ? point.state[group.indices[axisIdx]] : null),
                     mode: 'lines',
-                    name: axes1[0],
-                    line: { color: 'purple', width: 2 }
+                    name: axisLabel,
+                    line: { color, width: 2 },
+                    yaxis: axisIdx === 1 ? 'y2' : 'y'
+                };
+            });
+
+            const layout = {
+                title: `Time Series (${group.name || `${group.axes[0]} vs ${group.axes[1]}`})`,
+                xaxis: {
+                    title: 'Time (s)',
+                    range: [Math.max(0, currentTime - timeWindow), currentTime + 1]
                 },
-                {
-                    x: filteredData.map(p => p.t),
-                    y: filteredData.map(p => p.I2 ?? p.I),
-                    mode: 'lines',
-                    name: axes1[1],
-                    line: { color: 'green', width: 2 },
-                    yaxis: 'y2'
-                }
-            ];
-            const layout2 = {
-                title: 'Time Series 2 (Oscillator 2)',
-                xaxis: { title: 'Time (s)', range: [Math.max(0, currentTime - timeWindow), currentTime + 1] },
-                yaxis: { title: axes1[0], side: 'left', color: 'purple' },
-                yaxis2: { title: axes1[1], side: 'right', overlaying: 'y', color: 'green' },
+                yaxis: {
+                    title: group.axes[0],
+                    side: 'left',
+                    color: traces[0]?.line?.color || '#d1495b'
+                },
+                yaxis2: {
+                    title: group.axes[1],
+                    side: 'right',
+                    overlaying: 'y',
+                    color: traces[1]?.line?.color || traces[0]?.line?.color || '#0077b6'
+                },
                 margin: { l: 50, r: 50, b: 50, t: 50 },
                 showlegend: true
             };
-            Plotly.react(timePlotDiv2, traces2, layout2);
-        } else if (container2) {
-            container2.style.display = 'none';
+
+            target.container.style.display = 'block';
+            Plotly.react(target.div, traces, layout);
+        });
+
+        if (groups.length < 2 && timePlot2Container && timePlotDivSecondary) {
+            timePlot2Container.style.display = 'none';
+            Plotly.purge(timePlotDivSecondary);
         }
     }
 
@@ -745,10 +822,9 @@ document.addEventListener('DOMContentLoaded', function() {
         
         const selectedModel = models[modelSelect.value];
         const ode = getOdeFunction(selectedModel, currentParams);
-        const dt = 0.01; // Small time step for smooth animation
+        const dt = 0.01;
         const speed = parseFloat(speedSlider.value);
         
-        // Integrate one step
         const derivatives = ode(currentTime, currentState);
         
         for (let i = 0; i < currentState.length; i++) {
@@ -756,264 +832,262 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         currentTime += dt * speed;
         
-        // Store data point (for time series plot)
-        const point = { t: currentTime };
-        // Always store first two variables as E/I for backward compatibility
-        point.E = currentState[0];
-        point.I = currentState[1];
-        // If system has 4D (coupled model), also store E2/I2
-        if (currentState.length > 3) {
-            point.E2 = currentState[2];
-            point.I2 = currentState[3];
-        }
-        timeData.push(point);
+        timeData.push({
+            t: currentTime,
+            state: [...currentState]
+        });
         
-        // Limit data storage to prevent memory issues
-        const maxPoints = 10000;
-        if (timeData.length > maxPoints) {
-            timeData = timeData.slice(-maxPoints);
+        if (timeData.length > 10000) {
+            timeData = timeData.slice(-10000);
         }
         
-        // Update plots
         updateTimePlot();
-        
-        // Update phase plane with current point
-        updatePhasePlot();
+        updatePhasePlots();
     }
 
-    function updatePhasePlot() {
+    function updatePhasePlots() {
         const selectedModel = models[modelSelect.value];
-        const ode = getOdeFunction(selectedModel, currentParams);
+        const groups = phaseGroups.length > 0 ? phaseGroups : (selectedModel.phase_groups || [{
+            name: `${selectedModel.plot_axes[0]} vs ${selectedModel.plot_axes[1]}`,
+            indices: selectedModel.plot_indices,
+            axes: selectedModel.plot_axes,
+            axis_ranges: selectedModel.axis_ranges
+        }]);
 
-        // Helper to build one plot's data/layout from indices and ranges
-        function buildPlot(indices, axesLabels, xMin, xMax, yMin, yMax) {
-            const xIdx = indices[0];
-            const yIdx = indices[1];
-            const plotData = [];
+        const plotTargets = [
+            { div: plotDiv, container: phasePlotContainer },
+            { div: plotDivSecondary, container: phasePlot2Container }
+        ];
 
-            // Vector field
-            const gridSize = 20;
-            const x_coords = [];
-            const y_coords = [];
-            const scale = Math.min(xMax - xMin, yMax - yMin) * 0.02;
-            for (let i = 0; i < gridSize; i++) {
-                for (let j = 0; j < gridSize; j++) {
-                    const x = xMin + (i / (gridSize - 1)) * (xMax - xMin);
-                    const y = yMin + (j / (gridSize - 1)) * (yMax - yMin);
-
-                    const state = new Array(selectedModel.initial_conditions.length).fill(0);
-                    state[xIdx] = x;
-                    state[yIdx] = y;
-                    const d = ode(0, state);
-                    const dx = d[xIdx];
-                    const dy = d[yIdx];
-                    const norm = Math.hypot(dx, dy);
-                    if (norm > 0) {
-                        const dxn = (dx / norm) * scale;
-                        const dyn = (dy / norm) * scale;
-                        x_coords.push(x, x + dxn, null);
-                        y_coords.push(y, y + dyn, null);
-                    }
-                }
-            }
-            plotData.push({ x: x_coords, y: y_coords, mode: 'lines', type: 'scatter', name: 'Vector Field', line: { color: 'rgba(0,0,255,0.3)', width: 1 }, hoverinfo: 'skip' });
-
-            // Trajectories
-            const t_max = parseFloat(tmaxSlider.value);
-            const solver = solverSelect.value;
-            trajectories.forEach((traj, index) => {
-                let y;
-                if (solver === 'dopri') {
-                    const sol = numeric.dopri(0, t_max, traj.y0, ode, 1e-6, 2000);
-                    y = sol.y;
-                } else {
-                    const dt = 0.1;
-                    y = rk4(ode, traj.y0, 0, t_max, dt);
-                }
-                plotData.push({
-                    x: y.map(pt => pt[xIdx]),
-                    y: y.map(pt => pt[yIdx]),
-                    mode: 'lines', type: 'scatter', name: `Trajectory ${index + 1}`,
-                    line: { width: 2, color: `hsl(${(index * 137.5) % 360}, 70%, 50%)` }, hoverinfo: 'skip'
-                });
-                plotData.push({ x: [traj.y0[xIdx]], y: [traj.y0[yIdx]], mode: 'markers', type: 'scatter', name: `IC ${index + 1}`,
-                    marker: { size: 8, color: `hsl(${(index * 137.5) % 360}, 70%, 50%)`, symbol: 'circle', line: { width: 2, color: 'white' } }, hoverinfo: 'skip' });
-            });
-
-            // Current state
-            if (isSimulating) {
-                plotData.push({ x: [currentState[xIdx]], y: [currentState[yIdx]], mode: 'markers', type: 'scatter', name: 'Current State', marker: { size: 10, color: 'red', symbol: 'circle' } });
+        groups.forEach((group, index) => {
+            if (index >= plotTargets.length) {
+                console.warn('More than two phase plots are not supported yet.');
+                return;
             }
 
-            const layout = { title: `${selectedModel.name} (${axesLabels[0]} vs ${axesLabels[1]})`, xaxis: { title: axesLabels[0], range: [xMin, xMax], autorange: false }, yaxis: { title: axesLabels[1], range: [yMin, yMax], autorange: false }, margin: { l: 50, r: 50, b: 50, t: 50 }, showlegend: false };
-            return { plotData, layout };
-        }
-
-        // Determine first plot ranges from UI controls
-        const xMin1 = parseFloat(xlimMinInput.value);
-        const xMax1 = parseFloat(xlimMaxInput.value);
-        const yMin1 = parseFloat(ylimMinInput.value);
-        const yMax1 = parseFloat(ylimMaxInput.value);
-
-    const plotsCfg = selectedModel.plots || [{ indices: [0,1], axes: selectedModel.plot_axes || ['x','y'], axis_ranges: { x: {min: xMin1, max: xMax1}, y: {min: yMin1, max: yMax1} } }];
-        const p1 = plotsCfg[0];
-        const built1 = buildPlot(p1.indices, p1.axes, xMin1, xMax1, yMin1, yMax1);
-
-        Plotly.react(plotDiv, built1.plotData, built1.layout).then(() => {
-            // Clean up all existing event listeners
-            plotDiv.removeAllListeners('plotly_click');
-            
-            // Remove DOM event listeners to prevent duplicates
-            const existingHandler = plotDiv._clickHandler;
-            if (existingHandler) {
-                plotDiv.removeEventListener('click', existingHandler);
-            }
-            
-            // Plotly click handler (for clicks on data)
-            plotDiv.on('plotly_click', function(data) {
-                if (data.points && data.points.length > 0) {
-                    const point = data.points[0];
-                    if (point.curveNumber === 0) {
-                        const new_x = point.x;
-                        const new_y = point.y;
-                        const xlim_min = parseFloat(xlimMinInput.value);
-                        const xlim_max = parseFloat(xlimMaxInput.value);
-                        const ylim_min = parseFloat(ylimMinInput.value);
-                        const ylim_max = parseFloat(ylimMaxInput.value);
-                        if (new_x >= xlim_min && new_x <= xlim_max && new_y >= ylim_min && new_y <= ylim_max && !isSimulating) {
-                            const initialCondition = [...selectedModel.initial_conditions];
-                            const xIdx = p1.indices[0];
-                            const yIdx = p1.indices[1];
-                            initialCondition[xIdx] = new_x;
-                            initialCondition[yIdx] = new_y;
-                            trajectories.push({ y0: initialCondition });
-                            setTimeout(() => updatePlot(), 10);
-                        }
-                    }
-                }
-            });
-            
-            // Direct DOM click handler (backup for all clicks)
-            const clickHandler = function(event) {
-                if (clickTimeout) return;
-                clickTimeout = setTimeout(() => { clickTimeout = null; }, 300);
-                const rect = plotDiv.getBoundingClientRect();
-                const x_pixel = event.clientX - rect.left;
-                const y_pixel = event.clientY - rect.top;
-                const layout = plotDiv._fullLayout;
-                if (layout && layout.xaxis && layout.yaxis) {
-                    const xaxis = layout.xaxis;
-                    const yaxis = layout.yaxis;
-                    const plotWidth = xaxis._length;
-                    const plotHeight = yaxis._length;
-                    const plotLeft = xaxis._offset;
-                    const plotBottom = yaxis._offset;
-                    const relativeX = (x_pixel - plotLeft) / plotWidth;
-                    const relativeY = (y_pixel - plotBottom) / plotHeight;
-                    const xlim_min = parseFloat(xlimMinInput.value);
-                    const xlim_max = parseFloat(xlimMaxInput.value);
-                    const ylim_min = parseFloat(ylimMinInput.value);
-                    const ylim_max = parseFloat(ylimMaxInput.value);
-                    const alt_x = xlim_min + relativeX * (xlim_max - xlim_min);
-                    const alt_y = ylim_min + (1 - relativeY) * (ylim_max - ylim_min);
-                    if (alt_x >= xlim_min && alt_x <= xlim_max && alt_y >= ylim_min && alt_y <= ylim_max && !isSimulating) {
-                        const initialCondition = [...selectedModel.initial_conditions];
-                        const xIdx = p1.indices[0];
-                        const yIdx = p1.indices[1];
-                        initialCondition[xIdx] = alt_x;
-                        initialCondition[yIdx] = alt_y;
-                        trajectories.push({ y0: initialCondition });
-                        setTimeout(() => updatePlot(), 50);
-                    }
-                }
+            const axisRange = phaseAxisRanges[index] || {
+                x: { min: 0, max: 1 },
+                y: { min: 0, max: 1 }
             };
-            plotDiv._clickHandler = clickHandler;
-            plotDiv.addEventListener('click', clickHandler);
+
+            const target = plotTargets[index];
+            if (!target.div || !target.container) {
+                return;
+            }
+
+            target.container.style.display = 'block';
+            renderPhasePlotForGroup(target.div, group, axisRange, index);
         });
 
-        // Handle second plot (if available)
-        const p2 = plotsCfg[1];
-        const container2 = document.getElementById('phase-plot2-container');
-        if (p2 && plotDiv2) {
-            // Use UI values if present, otherwise fall back to config
-            const x2min = isFinite(parseFloat(xlim2MinInput.value)) ? parseFloat(xlim2MinInput.value)
-                : ((p2.axis_ranges && p2.axis_ranges.x && typeof p2.axis_ranges.x.min === 'number') ? p2.axis_ranges.x.min : xMin1);
-            const x2max = isFinite(parseFloat(xlim2MaxInput.value)) ? parseFloat(xlim2MaxInput.value)
-                : ((p2.axis_ranges && p2.axis_ranges.x && typeof p2.axis_ranges.x.max === 'number') ? p2.axis_ranges.x.max : xMax1);
-            const y2min = isFinite(parseFloat(ylim2MinInput.value)) ? parseFloat(ylim2MinInput.value)
-                : ((p2.axis_ranges && p2.axis_ranges.y && typeof p2.axis_ranges.y.min === 'number') ? p2.axis_ranges.y.min : yMin1);
-            const y2max = isFinite(parseFloat(ylim2MaxInput.value)) ? parseFloat(ylim2MaxInput.value)
-                : ((p2.axis_ranges && p2.axis_ranges.y && typeof p2.axis_ranges.y.max === 'number') ? p2.axis_ranges.y.max : yMax1);
-            const built2 = buildPlot(p2.indices, p2.axes, x2min, x2max, y2min, y2max);
-            container2.style.display = '';
-            Plotly.react(plotDiv2, built2.plotData, built2.layout).then(() => {
-                // Clean up old handlers
-                plotDiv2.removeAllListeners && plotDiv2.removeAllListeners('plotly_click');
-                const existingHandler2 = plotDiv2._clickHandler;
-                if (existingHandler2) plotDiv2.removeEventListener('click', existingHandler2);
-                // Plotly click for second plot
-                plotDiv2.on && plotDiv2.on('plotly_click', function(data) {
-                    if (data.points && data.points.length > 0) {
-                        const point = data.points[0];
-                        if (point.curveNumber === 0) {
-                            const new_x = point.x;
-                            const new_y = point.y;
-                            if (!isSimulating) {
-                                const initialCondition = [...selectedModel.initial_conditions];
-                                const xIdx = p2.indices[0];
-                                const yIdx = p2.indices[1];
-                                initialCondition[xIdx] = new_x;
-                                initialCondition[yIdx] = new_y;
-                                trajectories.push({ y0: initialCondition });
-                                setTimeout(() => updatePlot(), 10);
-                            }
-                        }
-                    }
-                });
-                // DOM click for second plot
-                const clickHandler2 = function(event) {
-                    if (clickTimeout) return;
-                    clickTimeout = setTimeout(() => { clickTimeout = null; }, 300);
-                    const rect = plotDiv2.getBoundingClientRect();
-                    const x_pixel = event.clientX - rect.left;
-                    const y_pixel = event.clientY - rect.top;
-                    const layout = plotDiv2._fullLayout;
-                    if (layout && layout.xaxis && layout.yaxis) {
-                        const xaxis = layout.xaxis;
-                        const yaxis = layout.yaxis;
-                        const plotWidth = xaxis._length;
-                        const plotHeight = yaxis._length;
-                        const plotLeft = xaxis._offset;
-                        const plotBottom = yaxis._offset;
-                        const relativeX = (x_pixel - plotLeft) / plotWidth;
-                        const relativeY = (y_pixel - plotBottom) / plotHeight;
-                        const xlim_min = isFinite(parseFloat(xlim2MinInput.value)) ? parseFloat(xlim2MinInput.value)
-                            : ((p2.axis_ranges && p2.axis_ranges.x && typeof p2.axis_ranges.x.min === 'number') ? p2.axis_ranges.x.min : xMin1);
-                        const xlim_max = isFinite(parseFloat(xlim2MaxInput.value)) ? parseFloat(xlim2MaxInput.value)
-                            : ((p2.axis_ranges && p2.axis_ranges.x && typeof p2.axis_ranges.x.max === 'number') ? p2.axis_ranges.x.max : xMax1);
-                        const ylim_min = isFinite(parseFloat(ylim2MinInput.value)) ? parseFloat(ylim2MinInput.value)
-                            : ((p2.axis_ranges && p2.axis_ranges.y && typeof p2.axis_ranges.y.min === 'number') ? p2.axis_ranges.y.min : yMin1);
-                        const ylim_max = isFinite(parseFloat(ylim2MaxInput.value)) ? parseFloat(ylim2MaxInput.value)
-                            : ((p2.axis_ranges && p2.axis_ranges.y && typeof p2.axis_ranges.y.max === 'number') ? p2.axis_ranges.y.max : yMax1);
-                        const alt_x = xlim_min + relativeX * (xlim_max - xlim_min);
-                        const alt_y = ylim_min + (1 - relativeY) * (ylim_max - ylim_min);
-                        if (alt_x >= xlim_min && alt_x <= xlim_max && alt_y >= ylim_min && alt_y <= ylim_max && !isSimulating) {
-                            const initialCondition = [...selectedModel.initial_conditions];
-                            const xIdx = p2.indices[0];
-                            const yIdx = p2.indices[1];
-                            initialCondition[xIdx] = alt_x;
-                            initialCondition[yIdx] = alt_y;
-                            trajectories.push({ y0: initialCondition });
-                            setTimeout(() => updatePlot(), 50);
-                        }
-                    }
-                };
-                plotDiv2._clickHandler = clickHandler2;
-                plotDiv2.addEventListener('click', clickHandler2);
-            });
-        } else if (container2) {
-            container2.style.display = 'none';
+        if (groups.length < 2 && plotDivSecondary && phasePlot2Container) {
+            phasePlot2Container.style.display = 'none';
+            plotDivSecondary.removeAllListeners?.('plotly_click');
+            Plotly.purge(plotDivSecondary);
         }
+    }
+
+    function renderPhasePlotForGroup(plotElement, group, axisRange, groupIndex) {
+        if (!plotElement) return;
+
+        const selectedModel = models[modelSelect.value];
+        const ode = getOdeFunction(selectedModel, currentParams);
+        const xIdx = group.indices[0];
+        const yIdx = group.indices[1];
+
+        const xlim_min = axisRange.x.min;
+        const xlim_max = axisRange.x.max;
+        const ylim_min = axisRange.y.min;
+        const ylim_max = axisRange.y.max;
+
+        const gridSize = 20;
+        const x_coords = [];
+        const y_coords = [];
+        const scale = Math.min(xlim_max - xlim_min, ylim_max - ylim_min) * 0.02;
+        
+        for (let i = 0; i < gridSize; i++) {
+            for (let j = 0; j < gridSize; j++) {
+                const x = xlim_min + (i / (gridSize - 1)) * (xlim_max - xlim_min);
+                const y = ylim_min + (j / (gridSize - 1)) * (ylim_max - ylim_min);
+                
+                const state = new Array(selectedModel.initial_conditions.length).fill(0);
+                state[xIdx] = x;
+                state[yIdx] = y;
+                
+                const derivatives = ode(0, state);
+                const dx = derivatives[xIdx];
+                const dy = derivatives[yIdx];
+                const norm = Math.sqrt(dx * dx + dy * dy);
+                
+                if (norm > 0) {
+                    const dx_norm = (dx / norm) * scale;
+                    const dy_norm = (dy / norm) * scale;
+                    
+                    x_coords.push(x, x + dx_norm, null);
+                    y_coords.push(y, y + dy_norm, null);
+                }
+            }
+        }
+
+        const plotData = [{
+            x: x_coords,
+            y: y_coords,
+            mode: 'lines',
+            type: 'scatter',
+            name: 'Vector Field',
+            line: { color: 'rgba(0,0,255,0.3)', width: 1 },
+            hoverinfo: 'skip',
+            hovertemplate: null
+        }];
+
+        const t_max = parseFloat(tmaxSlider.value);
+        const solver = solverSelect.value;
+        
+        trajectories.forEach((traj, index) => {
+            let y;
+            if (solver === 'dopri') {
+                const sol = numeric.dopri(0, t_max, traj.y0, ode, 1e-6, 2000);
+                y = sol.y;
+            } else {
+                const dt = 0.1;
+                y = rk4(ode, traj.y0, 0, t_max, dt);
+            }
+
+            plotData.push({
+                x: y.map(pt => pt[xIdx]),
+                y: y.map(pt => pt[yIdx]),
+                mode: 'lines',
+                type: 'scatter',
+                name: `Trajectory ${index + 1}`,
+                line: { width: 2, color: `hsl(${(index * 137.5) % 360}, 70%, 50%)` },
+                hoverinfo: 'skip'
+            });
+            
+            plotData.push({
+                x: [traj.y0[xIdx]],
+                y: [traj.y0[yIdx]],
+                mode: 'markers',
+                type: 'scatter',
+                name: `IC ${index + 1}`,
+                marker: { 
+                    size: 8, 
+                    color: `hsl(${(index * 137.5) % 360}, 70%, 50%)`,
+                    symbol: 'circle',
+                    line: { width: 2, color: 'white' }
+                },
+                hoverinfo: 'skip'
+            });
+        });
+
+        if (isSimulating) {
+            plotData.push({
+                x: [currentState[xIdx]],
+                y: [currentState[yIdx]],
+                mode: 'markers',
+                type: 'scatter',
+                name: 'Current State',
+                marker: { size: 10, color: 'red', symbol: 'circle' }
+            });
+        }
+
+        const titleSuffix = group.name ? ` — ${group.name}` : '';
+        const layout = {
+            title: `${selectedModel.name} Phase Plane${titleSuffix}`,
+            xaxis: { title: group.axes[0], range: [xlim_min, xlim_max], autorange: false },
+            yaxis: { title: group.axes[1], range: [ylim_min, ylim_max], autorange: false },
+            margin: { l: 50, r: 50, b: 50, t: 50 },
+            showlegend: false
+        };
+
+        Plotly.react(plotElement, plotData, layout).then(() => {
+            attachPhasePlotInteractions(plotElement, groupIndex, [xIdx, yIdx]);
+        });
+    }
+
+    function attachPhasePlotInteractions(plotElement, groupIndex, indices) {
+        if (!plotElement) {
+            return;
+        }
+
+        const [xIdx, yIdx] = indices;
+
+        plotElement.removeAllListeners?.('plotly_click');
+
+        const existingHandler = plotElement._clickHandler;
+        if (existingHandler) {
+            plotElement.removeEventListener('click', existingHandler);
+        }
+
+        plotElement.on('plotly_click', function(data) {
+            if (!data.points || data.points.length === 0) return;
+            const point = data.points[0];
+            if (point.curveNumber !== 0) return;
+
+            const axisRange = phaseAxisRanges[groupIndex];
+            const xlim_min = axisRange.x.min;
+            const xlim_max = axisRange.x.max;
+            const ylim_min = axisRange.y.min;
+            const ylim_max = axisRange.y.max;
+            const new_x = point.x;
+            const new_y = point.y;
+
+            if (new_x >= xlim_min && new_x <= xlim_max && new_y >= ylim_min && new_y <= ylim_max && !isSimulating) {
+                const selectedModel = models[modelSelect.value];
+                const initialCondition = [...selectedModel.initial_conditions];
+                initialCondition[xIdx] = new_x;
+                initialCondition[yIdx] = new_y;
+                trajectories.push({ y0: initialCondition });
+                setTimeout(() => updatePhasePlots(), 10);
+            }
+        });
+
+        const clickHandler = function(event) {
+            if (clickTimeout) {
+                return;
+            }
+            
+            clickTimeout = setTimeout(() => {
+                clickTimeout = null;
+            }, 300);
+            
+            const rect = plotElement.getBoundingClientRect();
+            const x_pixel = event.clientX - rect.left;
+            const y_pixel = event.clientY - rect.top;
+            
+            const layout = plotElement._fullLayout;
+            if (layout && layout.xaxis && layout.yaxis) {
+                const xaxis = layout.xaxis;
+                const yaxis = layout.yaxis;
+                
+                const plotWidth = xaxis._length;
+                const plotHeight = yaxis._length;
+                const plotLeft = xaxis._offset;
+                const plotBottom = yaxis._offset;
+                
+                const relativeX = (x_pixel - plotLeft) / plotWidth;
+                const relativeY = (y_pixel - plotBottom) / plotHeight;
+                
+                const axisRange = phaseAxisRanges[groupIndex];
+                const xlim_min = axisRange.x.min;
+                const xlim_max = axisRange.x.max;
+                const ylim_min = axisRange.y.min;
+                const ylim_max = axisRange.y.max;
+                
+                const alt_x = xlim_min + relativeX * (xlim_max - xlim_min);
+                const alt_y = ylim_min + (1 - relativeY) * (ylim_max - ylim_min);
+                
+                if (alt_x >= xlim_min && alt_x <= xlim_max && alt_y >= ylim_min && alt_y <= ylim_max && !isSimulating) {
+                    const selectedModel = models[modelSelect.value];
+                    const initialCondition = [...selectedModel.initial_conditions];
+                    initialCondition[xIdx] = alt_x;
+                    initialCondition[yIdx] = alt_y;
+                    trajectories.push({ y0: initialCondition });
+                    setTimeout(() => updatePhasePlots(), 10);
+                }
+            }
+        };
+        
+        plotElement._clickHandler = clickHandler;
+        plotElement.addEventListener('click', clickHandler);
     }
 
     function startSimulation() {
@@ -1068,7 +1142,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // Update the original updatePlot function to use the new phase plot function
     function updatePlot() {
-        updatePhasePlot();
+        updatePhasePlots();
+        if (!isSimulating) {
+            updateTimePlot();
+        }
     }
 
     // Start loading models when DOM is ready

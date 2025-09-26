@@ -62,9 +62,11 @@
       "w_ee2": { "min": 0, "max": 20, "value": 10, "step": 0.1, "latex": "w_{ee}^{(2)}", "description": "Excitatory to excitatory weight (oscillator 2)" },
       "w_ei2": { "min": 0, "max": 20, "value": 10, "step": 0.1, "latex": "w_{ei}^{(2)}", "description": "Inhibitory to excitatory weight (oscillator 2)" },
       "w_ie2": { "min": 0, "max": 20, "value": 10, "step": 0.1, "latex": "w_{ie}^{(2)}", "description": "Excitatory to inhibitory weight (oscillator 2)" },
-      "w_ii2": { "min": 0, "max": 20, "value": 10, "step": 0.1, "latex": "w_{ii}^{(2)}", "description": "Inhibitory to inhibitory weight (oscillator 2)" },
-      "w_c12": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{c}^{1 \\rightarrow 2}", "description": "Coupling strength from oscillator 1 to 2" },
-      "w_c21": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{c}^{2 \\rightarrow 1}", "description": "Coupling strength from oscillator 2 to 1" },
+  "w_ii2": { "min": 0, "max": 20, "value": 10, "step": 0.1, "latex": "w_{ii}^{(2)}", "description": "Inhibitory to inhibitory weight (oscillator 2)" },
+  "w_ce12": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{ce}^{1 \\rightarrow 2}", "description": "Excitatory cross-coupling from oscillator 1 to excitatory input of oscillator 2" },
+  "w_ci12": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{ci}^{1 \\rightarrow 2}", "description": "Excitatory cross-coupling from oscillator 1 to inhibitory input of oscillator 2" },
+  "w_ce21": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{ce}^{2 \\rightarrow 1}", "description": "Excitatory cross-coupling from oscillator 2 to excitatory input of oscillator 1" },
+  "w_ci21": { "min": 0, "max": 10, "value": 2, "step": 0.1, "latex": "w_{ci}^{2 \\rightarrow 1}", "description": "Excitatory cross-coupling from oscillator 2 to inhibitory input of oscillator 1" },
       "theta_e1": { "min": 0, "max": 10, "value": 4, "step": 0.1, "latex": "\\theta_e^{(1)}", "description": "Excitatory threshold (oscillator 1)" },
       "theta_i1": { "min": 0, "max": 10, "value": 3.7, "step": 0.1, "latex": "\\theta_i^{(1)}", "description": "Inhibitory threshold (oscillator 1)" },
       "theta_e2": { "min": 0, "max": 10, "value": 4, "step": 0.1, "latex": "\\theta_e^{(2)}", "description": "Excitatory threshold (oscillator 2)" },
@@ -79,6 +81,27 @@
       "tau_i2": { "min": 0.1, "max": 20, "value": 8, "step": 0.1, "latex": "\\tau_i^{(2)}", "description": "Inhibitory time constant (oscillator 2)" }
     },
     "initial_conditions": [0.1, 0.1, 0.2, 0.2],
+    "requires_all_phase_groups": true,
+    "phase_groups": [
+      {
+        "name": "Oscillator 1",
+        "indices": [0, 1],
+        "axes": ["E₁", "I₁"],
+        "axis_ranges": {
+          "x": { "min": 0, "max": 1 },
+          "y": { "min": 0, "max": 1 }
+        }
+      },
+      {
+        "name": "Oscillator 2",
+        "indices": [2, 3],
+        "axes": ["E₂", "I₂"],
+        "axis_ranges": {
+          "x": { "min": 0, "max": 1 },
+          "y": { "min": 0, "max": 1 }
+        }
+      }
+    ],
     "plots": [
       {
         "indices": [0, 1],
@@ -97,7 +120,7 @@
         }
       }
     ],
-    "formula": "\\begin{align*} \\tau_e^{(1)} \\frac{dE_1}{dt} &= -E_1 + (1 - E_1) S(w_{ee}^{(1)}E_1 - w_{ei}^{(1)}I_1 + w_{c}^{2 \\rightarrow 1}E_2 - \\theta_e^{(1)} + P^{(1)}) \\\\ \\tau_i^{(1)} \\frac{dI_1}{dt} &= -I_1 + (1 - I_1) S(w_{ie}^{(1)}E_1 - w_{ii}^{(1)}I_1 - \\theta_i^{(1)} + Q^{(1)}) \\\\ \\tau_e^{(2)} \\frac{dE_2}{dt} &= -E_2 + (1 - E_2) S(w_{ee}^{(2)}E_2 - w_{ei}^{(2)}I_2 + w_{c}^{1 \\rightarrow 2}E_1 - \\theta_e^{(2)} + P^{(2)}) \\\\ \\tau_i^{(2)} \\frac{dI_2}{dt} &= -I_2 + (1 - I_2) S(w_{ie}^{(2)}E_2 - w_{ii}^{(2)}I_2 - \\theta_i^{(2)} + Q^{(2)}) \\end{align*}",
+  "formula": "\\begin{align*} \\tau_e^{(1)} \\frac{dE_1}{dt} &= -E_1 + (1 - E_1) S(w_{ee}^{(1)}E_1 - w_{ei}^{(1)}I_1 + w_{ce}^{2 \\rightarrow 1}E_2 - \\theta_e^{(1)} + P^{(1)}) \\\\ \\tau_i^{(1)} \\frac{dI_1}{dt} &= -I_1 + (1 - I_1) S(w_{ie}^{(1)}E_1 - w_{ii}^{(1)}I_1 + w_{ci}^{2 \\rightarrow 1}E_2 - \\theta_i^{(1)} + Q^{(1)}) \\\\ \\tau_e^{(2)} \\frac{dE_2}{dt} &= -E_2 + (1 - E_2) S(w_{ee}^{(2)}E_2 - w_{ei}^{(2)}I_2 + w_{ce}^{1 \\rightarrow 2}E_1 - \\theta_e^{(2)} + P^{(2)}) \\\\ \\tau_i^{(2)} \\frac{dI_2}{dt} &= -I_2 + (1 - I_2) S(w_{ie}^{(2)}E_2 - w_{ii}^{(2)}I_2 + w_{ci}^{1 \\rightarrow 2}E_1 - \\theta_i^{(2)} + Q^{(2)}) \\end{align*}",
     "ode_type": "coupled_wilson_cowan"
   }
 }
