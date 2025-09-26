@@ -55,6 +55,44 @@ h1 {
     z-index: 10;
 }
 
+.saved-configs {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.saved-configs label {
+    font-size: 0.9em;
+    font-weight: 500;
+    color: #444;
+}
+
+.saved-configs select {
+    width: 100%;
+    max-width: 240px;
+    padding: 6px 8px;
+    border: 1px solid #666;
+    border-radius: 6px;
+    background-color: #fff;
+    font-size: 0.95em;
+}
+
+#save-config {
+    align-self: flex-start;
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: none;
+    background-color: #007bff;
+    color: #fff;
+    font-size: 0.95em;
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+}
+
+#save-config:hover {
+    background-color: #0056b3;
+}
+
 .main-layout {
     display: flex;
     height: calc(100vh - 200px);
@@ -177,6 +215,18 @@ select {
     align-items: center;
     gap: 5px;
     margin-top: 5px;
+}
+
+.range-controls.speed-max-controls {
+    justify-content: flex-start;
+    gap: 8px;
+    font-size: 0.85em;
+    flex-wrap: wrap;
+}
+
+.range-controls .range-label {
+    font-weight: 600;
+    color: #444;
 }
 
 .range-btn {

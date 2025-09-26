@@ -1,5 +1,8 @@
 document.addEventListener('DOMContentLoaded', function() {
     const modelSelect = document.getElementById('model-select');
+    const saveConfigBtn = document.getElementById('save-config');
+    const savedConfigsWrapper = document.getElementById('saved-configs-wrapper');
+    const savedConfigsSelect = document.getElementById('saved-configs');
     const slidersContainer = document.getElementById('sliders');
     const plotDiv = document.getElementById('plot');
     const plotDivSecondary = document.getElementById('plot2');
@@ -88,18 +91,92 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     ];
 
+    const CONFIG_STORAGE_KEY = 'dynsys:savedConfigs';
+    const LEGACY_CONFIG_KEY = 'dynsys:lastConfig';
+    const SAVE_FEEDBACK_TIMEOUT = 1500;
+
+    if (saveConfigBtn && !saveConfigBtn.dataset.originalLabel) {
+        saveConfigBtn.dataset.originalLabel = saveConfigBtn.textContent;
+    }
+
     // Continuous simulation elements
     const startSimBtn = document.getElementById('start-simulation');
     const stopSimBtn = document.getElementById('stop-simulation');
     const resetSimBtn = document.getElementById('reset-simulation');
     const speedSlider = document.getElementById('speed-slider');
     const speedValue = document.getElementById('speed-value');
+    const speedMaxValue = document.getElementById('speed-max-value');
+    const speedMaxDecrease = document.getElementById('speed-max-decrease');
+    const speedMaxIncrease = document.getElementById('speed-max-increase');
     const timeWindowSlider = document.getElementById('time-window-slider');
     const timeWindowValue = document.getElementById('time-window-value');
     const timePlotDiv = document.getElementById('time-plot');
     const timePlotDivSecondary = document.getElementById('time-plot2');
     const timePlotContainer = document.getElementById('time-plot-container');
     const timePlot2Container = document.getElementById('time-plot2-container');
+
+    const SPEED_MAX_STEP = 1;
+    const SPEED_MAX_LIMIT = 100;
+
+    function updateSpeedDisplay() {
+        if (speedValue && speedSlider) {
+            speedValue.textContent = parseFloat(speedSlider.value).toFixed(1);
+        }
+    }
+
+    function updateSpeedMaxUI() {
+        if (!speedSlider || !speedMaxValue) {
+            return;
+        }
+
+        const currentMax = parseFloat(speedSlider.max);
+        const minAllowed = Math.max(parseFloat(speedSlider.min), parseFloat(speedSlider.value));
+
+        speedMaxValue.textContent = currentMax.toFixed(1);
+
+        if (speedMaxDecrease) {
+            speedMaxDecrease.disabled = currentMax <= minAllowed + 1e-6;
+        }
+
+        if (speedMaxIncrease) {
+            speedMaxIncrease.disabled = currentMax >= SPEED_MAX_LIMIT - 1e-6;
+        }
+    }
+
+    function adjustSpeedMax(delta) {
+        if (!speedSlider) {
+            return;
+        }
+
+        const currentMax = parseFloat(speedSlider.max);
+        const minAllowed = Math.max(parseFloat(speedSlider.min), parseFloat(speedSlider.value));
+        let newMax = currentMax + delta;
+
+        newMax = Math.max(newMax, minAllowed);
+        newMax = Math.min(newMax, SPEED_MAX_LIMIT);
+
+        if (Math.abs(newMax - currentMax) < 1e-6) {
+            updateSpeedMaxUI();
+            return;
+        }
+
+        speedSlider.max = newMax.toFixed(1);
+
+        if (parseFloat(speedSlider.value) > newMax) {
+            speedSlider.value = newMax.toFixed(1);
+            updateSpeedDisplay();
+        }
+
+        updateSpeedMaxUI();
+    }
+
+    if (speedMaxIncrease) {
+        speedMaxIncrease.addEventListener('click', () => adjustSpeedMax(SPEED_MAX_STEP));
+    }
+
+    if (speedMaxDecrease) {
+        speedMaxDecrease.addEventListener('click', () => adjustSpeedMax(-SPEED_MAX_STEP));
+    }
 
     let trajectories = []; // Store clicked trajectories
     let clickTimeout = null; // Debounce clicks
@@ -115,6 +192,10 @@ document.addEventListener('DOMContentLoaded', function() {
     let currentParams = {};
     let phaseGroups = [];
     let phaseAxisRanges = [];
+    let savedConfigurations = [];
+    let lastSavedConfig = null;
+    let selectedSavedConfigId = null;
+    let saveFeedbackTimer = null;
 
     // Load models from JSON file
     async function loadModels() {
@@ -314,10 +395,32 @@ document.addEventListener('DOMContentLoaded', function() {
             modelSelect.appendChild(option);
         }
         
-        // Initialize with first model
-        const firstModelKey = Object.keys(models)[0];
-        modelSelect.value = firstModelKey;
-        const initialModel = models[firstModelKey];
+        const loadedConfigs = loadSavedConfigurations();
+        savedConfigurations = loadedConfigs.filter(config => {
+            const hasModel = !!models[config.modelKey];
+            if (hasModel && !config.modelName) {
+                config.modelName = models[config.modelKey].name;
+            }
+            return hasModel;
+        });
+
+        if (loadedConfigs.length !== savedConfigurations.length) {
+            persistConfigurations(savedConfigurations);
+        }
+
+        lastSavedConfig = savedConfigurations.length > 0
+            ? savedConfigurations[savedConfigurations.length - 1]
+            : null;
+        selectedSavedConfigId = lastSavedConfig ? lastSavedConfig.id : null;
+
+        let initialModelKey = Object.keys(models)[0];
+
+        if (lastSavedConfig && models[lastSavedConfig.modelKey]) {
+            initialModelKey = lastSavedConfig.modelKey;
+        }
+
+        modelSelect.value = initialModelKey;
+        const initialModel = models[initialModelKey];
         
         // Set initial state from model
         currentState = [...initialModel.initial_conditions];
@@ -326,11 +429,19 @@ document.addEventListener('DOMContentLoaded', function() {
         createSliders(initialModel);
         initializeAxisRanges(initialModel);
         updateFormula(initialModel);
+
+        if (lastSavedConfig && lastSavedConfig.modelKey === initialModelKey) {
+            applySavedParameters(initialModelKey, lastSavedConfig.params);
+        }
+
         updatePlot();
         
         // Initialize time plot
         updateTimePlot();
         
+        updateSavedConfigsDropdown(selectedSavedConfigId);
+        updateSaveButtonMetadata(lastSavedConfig);
+
         // Initialize button states
         stopSimBtn.disabled = true;
         resetSimBtn.disabled = true;
@@ -441,6 +552,338 @@ document.addEventListener('DOMContentLoaded', function() {
     // Helper functions
     function sigmoid(x) {
         return 1 / (1 + Math.exp(-x));
+    }
+
+    function normalizeSavedConfigEntry(entry) {
+        if (!entry || typeof entry !== 'object') {
+            return null;
+        }
+
+        const modelKey = entry.modelKey || entry.model;
+        if (!modelKey) {
+            return null;
+        }
+
+        const params = (entry.params && typeof entry.params === 'object') ? entry.params : {};
+        const savedAt = entry.savedAt || entry.timestamp || new Date().toISOString();
+        const modelName = entry.modelName || null;
+        const id = entry.id || `${modelKey}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        return {
+            id,
+            modelKey,
+            modelName,
+            savedAt,
+            params
+        };
+    }
+
+    function loadSavedConfigurations() {
+        if (typeof window === 'undefined' || !window.localStorage) {
+            return [];
+        }
+
+        const configs = [];
+
+        const parseFromStorage = (key) => {
+            if (!key) {
+                return null;
+            }
+
+            const raw = window.localStorage.getItem(key);
+            if (!raw) {
+                return null;
+            }
+
+            try {
+                return JSON.parse(raw);
+            } catch (error) {
+                console.warn(`Failed to parse saved configurations for key ${key}`, error);
+                return null;
+            }
+        };
+
+        const stored = parseFromStorage(CONFIG_STORAGE_KEY);
+        if (Array.isArray(stored)) {
+            stored.forEach(entry => {
+                const normalized = normalizeSavedConfigEntry(entry);
+                if (normalized) {
+                    configs.push(normalized);
+                }
+            });
+        } else if (stored) {
+            const normalized = normalizeSavedConfigEntry(stored);
+            if (normalized) {
+                configs.push(normalized);
+            }
+        }
+
+        if (configs.length === 0) {
+            const legacy = parseFromStorage(LEGACY_CONFIG_KEY);
+            const normalizedLegacy = normalizeSavedConfigEntry(legacy);
+            if (normalizedLegacy) {
+                configs.push(normalizedLegacy);
+            }
+        }
+
+        configs.sort((a, b) => {
+            const aTime = new Date(a.savedAt).getTime();
+            const bTime = new Date(b.savedAt).getTime();
+            return aTime - bTime;
+        });
+
+        return configs;
+    }
+
+    function persistConfigurations(configs) {
+        if (typeof window === 'undefined' || !window.localStorage) {
+            return;
+        }
+
+        try {
+            window.localStorage.setItem(CONFIG_STORAGE_KEY, JSON.stringify(configs));
+            window.localStorage.removeItem(LEGACY_CONFIG_KEY);
+        } catch (error) {
+            console.error('Failed to persist configurations', error);
+        }
+    }
+
+    function formatSavedConfigLabel(config) {
+        if (!config) {
+            return '';
+        }
+
+        const savedDate = new Date(config.savedAt);
+        const formattedDate = Number.isNaN(savedDate.getTime())
+            ? config.savedAt
+            : savedDate.toLocaleString();
+
+        const modelDefinition = models[config.modelKey];
+        const modelLabel = config.modelName || (modelDefinition ? modelDefinition.name : config.modelKey);
+
+        return `${formattedDate} — ${modelLabel}`;
+    }
+
+    function updateSavedConfigsDropdown(preferredId) {
+        if (!savedConfigsSelect) {
+            return;
+        }
+
+        savedConfigsSelect.innerHTML = '';
+
+        const availableConfigs = savedConfigurations.filter(config => {
+            const hasModel = !!models[config.modelKey];
+            if (hasModel && !config.modelName) {
+                config.modelName = models[config.modelKey].name;
+            }
+            return hasModel;
+        });
+
+        if (availableConfigs.length === 0) {
+            if (savedConfigsWrapper) {
+                savedConfigsWrapper.style.display = 'none';
+            }
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'No saved configurations';
+            placeholder.disabled = true;
+            placeholder.selected = true;
+            savedConfigsSelect.appendChild(placeholder);
+            savedConfigsSelect.disabled = true;
+            selectedSavedConfigId = null;
+            return;
+        }
+
+        savedConfigsSelect.disabled = false;
+        if (savedConfigsWrapper) {
+            savedConfigsWrapper.style.display = '';
+        }
+
+        const placeholder = document.createElement('option');
+        placeholder.value = '';
+        placeholder.textContent = 'Select saved configuration';
+        placeholder.disabled = true;
+        savedConfigsSelect.appendChild(placeholder);
+
+        const preferredSelection = preferredId || selectedSavedConfigId;
+        let hasSelection = false;
+
+        availableConfigs.forEach(config => {
+            const option = document.createElement('option');
+            option.value = config.id;
+            option.textContent = formatSavedConfigLabel(config);
+            if (preferredSelection && config.id === preferredSelection) {
+                option.selected = true;
+                hasSelection = true;
+            }
+            savedConfigsSelect.appendChild(option);
+        });
+
+        if (!hasSelection) {
+            placeholder.selected = true;
+            selectedSavedConfigId = null;
+        } else {
+            selectedSavedConfigId = preferredSelection;
+        }
+    }
+
+    function getSavedConfigById(id) {
+        if (!id) {
+            return null;
+        }
+
+        return savedConfigurations.find(config => config.id === id) || null;
+    }
+
+    function collectCurrentConfiguration() {
+        const modelKey = modelSelect.value;
+        const model = models[modelKey];
+
+        if (!model || !model.params) {
+            return null;
+        }
+
+        const params = {};
+        for (const paramName in model.params) {
+            if (!Object.prototype.hasOwnProperty.call(model.params, paramName)) {
+                continue;
+            }
+
+            const slider = document.getElementById(paramName);
+            if (slider) {
+                params[paramName] = parseFloat(slider.value);
+            } else if (currentParams[paramName] !== undefined) {
+                params[paramName] = currentParams[paramName];
+            }
+        }
+
+        const savedAt = new Date().toISOString();
+        const generatedId = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+
+        return {
+            id: generatedId,
+            modelKey,
+            modelName: model.name,
+            savedAt,
+            params
+        };
+    }
+
+    function showSaveFeedback(message, isError = false) {
+        if (!saveConfigBtn) {
+            return;
+        }
+
+        const original = saveConfigBtn.dataset.originalLabel || saveConfigBtn.textContent;
+        if (!saveConfigBtn.dataset.originalLabel) {
+            saveConfigBtn.dataset.originalLabel = original;
+        }
+
+        saveConfigBtn.textContent = message;
+        saveConfigBtn.disabled = !isError;
+
+        if (saveFeedbackTimer) {
+            clearTimeout(saveFeedbackTimer);
+        }
+
+        saveFeedbackTimer = setTimeout(() => {
+            saveConfigBtn.textContent = saveConfigBtn.dataset.originalLabel || original;
+            saveConfigBtn.disabled = false;
+            saveFeedbackTimer = null;
+        }, SAVE_FEEDBACK_TIMEOUT);
+    }
+
+    function updateSaveButtonMetadata(config) {
+        if (!saveConfigBtn) {
+            return;
+        }
+
+        if (config && config.savedAt) {
+            const savedDate = new Date(config.savedAt);
+            const formattedDate = Number.isNaN(savedDate.getTime())
+                ? config.savedAt
+                : savedDate.toLocaleString();
+            const modelDefinition = models[config.modelKey];
+            const modelLabel = config.modelName || (modelDefinition ? modelDefinition.name : config.modelKey);
+            saveConfigBtn.title = `Last saved: ${formattedDate} — ${modelLabel}`;
+        } else {
+            saveConfigBtn.title = 'Save the current model parameters for reuse later';
+        }
+    }
+
+    function saveCurrentConfiguration() {
+        const config = collectCurrentConfiguration();
+
+        if (!config) {
+            showSaveFeedback('Nothing to save', true);
+            return;
+        }
+
+        if (typeof window === 'undefined' || !window.localStorage) {
+            console.warn('Local storage is not available for saving configuration.');
+            showSaveFeedback('Storage unavailable', true);
+            return;
+        }
+
+        const configs = savedConfigurations.slice();
+        configs.push(config);
+
+        persistConfigurations(configs);
+
+        savedConfigurations = configs;
+        lastSavedConfig = config;
+        selectedSavedConfigId = config.id;
+
+        showSaveFeedback('Saved!');
+        updateSaveButtonMetadata(config);
+        updateSavedConfigsDropdown(config.id);
+    }
+
+    function applySavedParameters(modelKey, params) {
+        if (!params || typeof params !== 'object') {
+            return;
+        }
+
+        for (const paramName in params) {
+            if (!Object.prototype.hasOwnProperty.call(params, paramName)) {
+                continue;
+            }
+
+            const slider = document.getElementById(paramName);
+            if (!slider) {
+                continue;
+            }
+
+            const numericValue = parseFloat(params[paramName]);
+            if (Number.isNaN(numericValue)) {
+                continue;
+            }
+
+            const container = slider.closest('.slider-container');
+            const rangeInputs = container ? container.querySelectorAll('.range-input') : null;
+
+            if (numericValue < parseFloat(slider.min)) {
+                slider.min = numericValue;
+                if (rangeInputs && rangeInputs.length > 0) {
+                    rangeInputs[0].value = numericValue;
+                }
+            }
+
+            if (numericValue > parseFloat(slider.max)) {
+                slider.max = numericValue;
+                if (rangeInputs && rangeInputs.length > 1) {
+                    rangeInputs[1].value = numericValue;
+                }
+            }
+
+            slider.value = numericValue;
+            const valueSpan = document.getElementById(`${paramName}-value`);
+            if (valueSpan) {
+                valueSpan.textContent = numericValue;
+            }
+            currentParams[paramName] = numericValue;
+        }
     }
 
 
@@ -632,12 +1075,35 @@ document.addEventListener('DOMContentLoaded', function() {
 
 
     modelSelect.addEventListener('change', function() {
-        const model = models[this.value];
+        const modelKey = this.value;
+        const model = models[modelKey];
         createSliders(model);
         initializeAxisRanges(model);
         updateFormula(model);
         resetSimulation();
-        updatePlot();
+
+        let configToApply = null;
+
+        if (selectedSavedConfigId) {
+            const selectedConfig = getSavedConfigById(selectedSavedConfigId);
+            if (selectedConfig && selectedConfig.modelKey === modelKey) {
+                configToApply = selectedConfig;
+            }
+        }
+
+        if (!configToApply && lastSavedConfig && lastSavedConfig.modelKey === modelKey) {
+            configToApply = lastSavedConfig;
+        }
+
+        if (configToApply) {
+            applySavedParameters(modelKey, configToApply.params);
+            updatePlot();
+            updateTimePlot();
+            updateSaveButtonMetadata(configToApply);
+        } else {
+            updatePlot();
+            updateSaveButtonMetadata(null);
+        }
     });
 
     tmaxSlider.addEventListener('input', function() {
@@ -1130,8 +1596,43 @@ document.addEventListener('DOMContentLoaded', function() {
     resetSimBtn.addEventListener('click', resetSimulation);
 
     speedSlider.addEventListener('input', function() {
-        speedValue.textContent = parseFloat(this.value).toFixed(1);
+        updateSpeedDisplay();
+        updateSpeedMaxUI();
     });
+
+    if (savedConfigsSelect) {
+        savedConfigsSelect.addEventListener('change', function() {
+            const configId = this.value;
+            if (!configId) {
+                return;
+            }
+
+            const config = getSavedConfigById(configId);
+            if (!config) {
+                console.warn('Saved configuration not found for id:', configId);
+                return;
+            }
+
+            selectedSavedConfigId = config.id;
+
+            if (modelSelect.value !== config.modelKey) {
+                modelSelect.value = config.modelKey;
+                modelSelect.dispatchEvent(new Event('change', { bubbles: true }));
+            } else {
+                applySavedParameters(config.modelKey, config.params);
+                updatePlot();
+                updateTimePlot();
+                updateSaveButtonMetadata(config);
+            }
+        });
+    }
+
+    if (saveConfigBtn) {
+        saveConfigBtn.addEventListener('click', saveCurrentConfiguration);
+    }
+
+    updateSpeedDisplay();
+    updateSpeedMaxUI();
 
     timeWindowSlider.addEventListener('input', function() {
         timeWindowValue.textContent = this.value;
